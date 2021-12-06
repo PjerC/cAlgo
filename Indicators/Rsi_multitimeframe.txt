@@ -1,0 +1,161 @@
+using System;
+using cAlgo.API;
+using cAlgo.API.Internals;
+using cAlgo.API.Indicators;
+using cAlgo.Indicators;
+
+namespace cAlgo
+{
+    // RSI MULTIFRAME BY PIOTR_CIESIELSKI (skaseq) 
+
+    [Levels(30, 70)]
+    [Indicator(IsOverlay = false, TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
+    public class RSI_multitimeframe : Indicator
+    {
+        // rsi param 
+        [Parameter("Active timeframe period", Group = "Rsi Period", DefaultValue = 14)]
+        public int rsiPeriod { get; set; }
+        [Parameter("Period m1", Group = "Rsi Period", DefaultValue = 14)]
+        public int rsiPeriod_m1 { get; set; }
+        [Parameter("Period m5", Group = "Rsi Period", DefaultValue = 14)]
+        public int rsiPeriod_m5 { get; set; }
+        [Parameter("Period m15", Group = "Rsi Period", DefaultValue = 14)]
+        public int rsiPeriod_m15 { get; set; }
+        [Parameter("Period h1", Group = "Rsi Period", DefaultValue = 14)]
+        public int rsiPeriod_h1 { get; set; }
+        [Parameter("Period h4", Group = "Rsi Period", DefaultValue = 14)]
+        public int rsiPeriod_h4 { get; set; }
+        [Parameter("Period d1", Group = "Rsi Period", DefaultValue = 14)]
+        public int rsiPeriod_d1 { get; set; }
+        // bool flags for various timeframes -> ON/OFF 
+        [Parameter("Trigger m1", Group = "Triggers", DefaultValue = "false")]
+        public bool flaga_m1 { get; set; }
+        //  [Parameter("Trigger m5", Group = "Triggers", DefaultValue = "false")]
+        //  public bool flaga_m5 { get; set; }
+        [Parameter("Trigger m15", Group = "Triggers", DefaultValue = "false")]
+        public bool flaga_m15 { get; set; }
+        [Parameter("Trigger h1", Group = "Triggers", DefaultValue = "false")]
+        public bool flaga_h1 { get; set; }
+        [Parameter("Trigger h4", Group = "Triggers", DefaultValue = "false")]
+        public bool flaga_h4 { get; set; }
+        [Parameter("Trigger d1", Group = "Triggers", DefaultValue = "false")]
+        public bool flaga_d1 { get; set; }
+        // outputs
+        [Output("Rsi active", LineColor = "Green", PlotType = PlotType.Line, Thickness = 1)]
+        public IndicatorDataSeries RSI_Result_active { get; set; }
+        [Output("Rsi m1", LineColor = "Yellow", PlotType = PlotType.Line, Thickness = 1)]
+        public IndicatorDataSeries RSI_Result_m1 { get; set; }
+        [Output("Rsi m5", LineColor = "Red", PlotType = PlotType.Line, Thickness = 1)]
+        public IndicatorDataSeries RSI_Result_m5 { get; set; }
+        [Output("Rsi m15", LineColor = "Orange", PlotType = PlotType.Line, Thickness = 1)]
+        public IndicatorDataSeries RSI_Result_m15 { get; set; }
+        [Output("Rsi h1", LineColor = "White", PlotType = PlotType.Line, Thickness = 1)]
+        public IndicatorDataSeries RSI_Result_h1 { get; set; }
+        [Output("Rsi h4", LineColor = "Pink", PlotType = PlotType.Line, Thickness = 1)]
+        public IndicatorDataSeries RSI_Result_h4 { get; set; }
+        [Output("Rsi d1", LineColor = "Pink", PlotType = PlotType.Line, Thickness = 1)]
+        public IndicatorDataSeries RSI_Result_d1 { get; set; }
+        //timeframy
+        private Bars timeframe_m1, timeframe_m5, timeframe_m15, timeframe_h1, timeframe_h4, timeframe_d1;
+        // rsi var
+        //active timeframe
+        private RelativeStrengthIndex _rsi;
+        // timeframes 
+        private RelativeStrengthIndex _rsi_m1, _rsi_m5, _rsi_m15, _rsi_h1, _rsi_h4, _rsi_d1;
+        private bool flaga_m5 = true;
+        // ui
+
+        protected override void Initialize()
+        {
+            //ui
+            Button Button1 = new Button();
+            Button1.Text = "m5";
+            Button1.Margin = 5;
+            Button1.Left = -100;
+            Button1.Top = 10;
+            Button1.MaxWidth = 50;
+            Button1.MaxHeight = 50;
+            Chart.AddControl(Button1);
+            //dodaj btn na ui indicatora 
+            //Chart.IndicatorAreas[0].AddControl(trigger_m5);
+            Button1.Click += CloseButton;
+
+            DataSeries _ds = Bars.TypicalPrices;
+            //active timeframe
+            _rsi = Indicators.RelativeStrengthIndex(_ds, rsiPeriod);
+            //obliczanie m5
+            timeframe_m1 = MarketData.GetBars(TimeFrame.Minute);
+            timeframe_m5 = MarketData.GetBars(TimeFrame.Minute5);
+            timeframe_m15 = MarketData.GetBars(TimeFrame.Minute15);
+            timeframe_h1 = MarketData.GetBars(TimeFrame.Hour);
+            timeframe_h4 = MarketData.GetBars(TimeFrame.Hour4);
+            timeframe_d1 = MarketData.GetBars(TimeFrame.Daily);
+            _rsi_m1 = Indicators.RelativeStrengthIndex(timeframe_m1.ClosePrices, rsiPeriod_m1);
+            _rsi_m5 = Indicators.RelativeStrengthIndex(timeframe_m5.ClosePrices, rsiPeriod_m5);
+            _rsi_m15 = Indicators.RelativeStrengthIndex(timeframe_m15.ClosePrices, rsiPeriod_m15);
+            _rsi_h1 = Indicators.RelativeStrengthIndex(timeframe_h1.ClosePrices, rsiPeriod_h1);
+            _rsi_h4 = Indicators.RelativeStrengthIndex(timeframe_h4.ClosePrices, rsiPeriod_h4);
+            _rsi_d1 = Indicators.RelativeStrengthIndex(timeframe_d1.ClosePrices, rsiPeriod_d1);
+        }
+
+        public override void Calculate(int index)
+        {
+            RSI_Result_active[index] = _rsi.Result[index];
+            // check active timeframe and disable overwriting
+            if (flaga_m1 == true && TimeFrame != TimeFrame.Minute)
+            {
+                var index_m1 = GetIndexByDate(timeframe_m1, Bars.OpenTimes[index]);
+                if (index_m1 != -1)
+                    RSI_Result_m1[index] = _rsi_m1.Result[index_m1];
+            }
+            if (flaga_m5 == true && TimeFrame != TimeFrame.Minute5)
+            {
+                var index_m5 = GetIndexByDate(timeframe_m5, Bars.OpenTimes[index]);
+                if (index_m5 != -1)
+                    RSI_Result_m5[index] = _rsi_m5.Result[index_m5];
+            }
+            if (flaga_m15 == true && TimeFrame != TimeFrame.Minute15)
+            {
+                var index_m15 = GetIndexByDate(timeframe_m15, Bars.OpenTimes[index]);
+                if (index_m15 != -1)
+                    RSI_Result_m15[index] = _rsi_m15.Result[index_m15];
+            }
+            if (flaga_h1 == true && TimeFrame != TimeFrame.Hour)
+            {
+                var index_h1 = GetIndexByDate(timeframe_h1, Bars.OpenTimes[index]);
+                if (index_h1 != -1)
+                    RSI_Result_h1[index] = _rsi_h1.Result[index_h1];
+            }
+            if (flaga_h4 == true && TimeFrame != TimeFrame.Hour4)
+            {
+                var index_h4 = GetIndexByDate(timeframe_h4, Bars.OpenTimes[index]);
+                if (index_h4 != -1)
+                    RSI_Result_h4[index] = _rsi_h4.Result[index_h4];
+            }
+            if (flaga_d1 == true && TimeFrame != TimeFrame.Daily)
+            {
+                var index_d1 = GetIndexByDate(timeframe_d1, Bars.OpenTimes[index]);
+                if (index_d1 != -1)
+                    RSI_Result_d1[index] = _rsi_d1.Result[index_d1];
+            }
+        }
+
+        private int GetIndexByDate(Bars timeframe, DateTime time)
+        {
+            for (int i = timeframe.ClosePrices.Count - 1; i > 0; i--)
+            {
+                if (time == timeframe.OpenTimes[i])
+                    return i;
+            }
+            return -1;
+        }
+
+        void CloseButton(object sender)
+        {
+            Button button1 = sender as Button;
+            button1.IsEnabled = false;
+        }
+
+    }
+
+}

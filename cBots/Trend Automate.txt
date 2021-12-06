@@ -1,0 +1,561 @@
+using System;
+using System.Collections.Generic;
+using cAlgo.API;
+using cAlgo.API.Internals;
+using cAlgo.API.Indicators;
+using cAlgo.Indicators;
+namespace cAlgo.Robots
+{
+    [Robot(TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
+
+    public class Trendy_v1 : Robot
+    {
+        // odleglosc delty1 m1 m5 m15 h1 h4
+        [Parameter(DefaultValue = 0.3)]
+        public double czulosc_m1 { get; set; }
+        [Parameter(DefaultValue = 0.7)]
+        public double czulosc_m5 { get; set; }
+        [Parameter(DefaultValue = 2.0)]
+        public double czulosc_m15 { get; set; }
+        [Parameter(DefaultValue = 4.0)]
+        public double czulosc_h1 { get; set; }
+        [Parameter(DefaultValue = 17.0)]
+        public double czulosc_h4 { get; set; }
+        // dane stoch1433
+        private StochasticOscillator _stoch14_m1;
+        private StochasticOscillator _stoch14_m5;
+        //dane timeframe
+        private MarketSeries _timeframe_m1;
+        private MarketSeries _timeframe_m5;
+        private MarketSeries _timeframe_m15;
+        private MarketSeries _timeframe_h1;
+        private MarketSeries _timeframe_h4;
+        //ema
+        private ExponentialMovingAverage _ema26;
+        private ExponentialMovingAverage _ema60;
+        private ExponentialMovingAverage _ema200;
+        // m5
+        private ExponentialMovingAverage _ema26_m5;
+        private ExponentialMovingAverage _ema60_m5;
+        private ExponentialMovingAverage _ema200_m5;
+        // m15
+        private ExponentialMovingAverage _ema26_m15;
+        private ExponentialMovingAverage _ema60_m15;
+        private ExponentialMovingAverage _ema200_m15;
+        // h1
+        private ExponentialMovingAverage _ema26_h1;
+        private ExponentialMovingAverage _ema60_h1;
+        private ExponentialMovingAverage _ema200_h1;
+        // h4
+        private ExponentialMovingAverage _ema26_h4;
+        private ExponentialMovingAverage _ema60_h4;
+        private ExponentialMovingAverage _ema200_h4;
+        // delta emy
+        string _delta_ref = "";
+        string _delta_ref_m5 = "";
+        string _delta_ref_m15 = "";
+        string _delta_ref_h1 = "";
+        string _delta_ref_h4 = "";
+        string _delta1_string = "";
+        string _delta1_string_m5 = "";
+        string _delta1_string_m15 = "";
+        string _delta1_string_h1 = "";
+        string _delta1_string_h4 = "";
+        public double _abs_delta1;
+        public double _abs_delta1_m5;
+        public double _abs_delta1_m15;
+        public double _abs_delta1_h1;
+        public double _abs_delta1_h4;
+        string _m1_trend = "no data";
+        string _m5_trend = "no data";
+        string _m15_trend = "no data";
+        string _h1_trend = "no data";
+        string _h4_trend = "no data";
+        //flagi
+        //m1
+        public bool m1_short_trend = false;
+        public bool m1_long_trend = false;
+        public bool m1_consolidation = false;
+        //m5
+        public bool m5_short_trend = false;
+        public bool m5_long_trend = false;
+        public bool m5_consolidation = false;
+        //m15
+        public bool m15_short_trend = false;
+        public bool m15_long_trend = false;
+        public bool m15_consolidation = false;
+        //h1
+        public bool h1_short_trend = false;
+        public bool h1_long_trend = false;
+        public bool h1_consolidation = false;
+        //h4
+        public bool h4_short_trend = false;
+        public bool h4_long_trend = false;
+        public bool h4_consolidation = false;
+        //m1
+        public bool short_trend_active_m1 = false;
+        public bool long_trend_active_m1 = false;
+        public bool no_trend_active_m1 = false;
+        //m5
+        public bool short_trend_active_m5 = false;
+        public bool long_trend_active_m5 = false;
+        public bool no_trend_active_m5 = false;
+        //m15
+        public bool short_trend_active_m15 = false;
+        public bool long_trend_active_m15 = false;
+        public bool no_trend_active_m15 = false;
+        //h1
+        public bool short_trend_active_h1 = false;
+        public bool long_trend_active_h1 = false;
+        public bool no_trend_active_h1 = false;
+        //h4
+        public bool short_trend_active_h4 = false;
+        public bool long_trend_active_h4 = false;
+        public bool no_trend_active_h4 = false;
+        //
+        public double price_ask;
+        public double price_bid;
+        protected override void OnStart()
+        {
+
+
+            _timeframe_m1 = MarketData.GetSeries(Symbol, TimeFrame.Minute);
+            _timeframe_m5 = MarketData.GetSeries(Symbol, TimeFrame.Minute5);
+            _timeframe_m15 = MarketData.GetSeries(Symbol, TimeFrame.Minute15);
+            _timeframe_h1 = MarketData.GetSeries(Symbol, TimeFrame.Hour);
+            _timeframe_h4 = MarketData.GetSeries(Symbol, TimeFrame.Hour4);
+            // delta1 z m1
+            _ema26 = Indicators.ExponentialMovingAverage(_timeframe_m1.Close, 5);
+            _ema60 = Indicators.ExponentialMovingAverage(_timeframe_m1.Close, 13);
+            _ema200 = Indicators.ExponentialMovingAverage(_timeframe_m1.Close, 200);
+            // delta1 z m5
+            _ema26_m5 = Indicators.ExponentialMovingAverage(_timeframe_m5.Close, 5);
+            _ema60_m5 = Indicators.ExponentialMovingAverage(_timeframe_m5.Close, 13);
+            _ema200_m5 = Indicators.ExponentialMovingAverage(_timeframe_m5.Close, 200);
+            // delta1  m15
+            _ema26_m15 = Indicators.ExponentialMovingAverage(_timeframe_m15.Close, 5);
+            _ema60_m15 = Indicators.ExponentialMovingAverage(_timeframe_m15.Close, 13);
+            _ema200_m15 = Indicators.ExponentialMovingAverage(_timeframe_m15.Close, 200);
+            // delta1  h1
+            _ema26_h1 = Indicators.ExponentialMovingAverage(_timeframe_h1.Close, 5);
+            _ema60_h1 = Indicators.ExponentialMovingAverage(_timeframe_h1.Close, 13);
+            _ema200_h1 = Indicators.ExponentialMovingAverage(_timeframe_h1.Close, 200);
+            // delta1  h4
+            _ema26_h4 = Indicators.ExponentialMovingAverage(_timeframe_h4.Close, 5);
+            _ema60_h4 = Indicators.ExponentialMovingAverage(_timeframe_h4.Close, 13);
+            _ema200_h4 = Indicators.ExponentialMovingAverage(_timeframe_h4.Close, 200);
+            //stoch z m1
+            _stoch14_m1 = Indicators.StochasticOscillator(_timeframe_m1, 14, 3, 3, MovingAverageType.Simple);
+            _stoch14_m5 = Indicators.StochasticOscillator(_timeframe_m5, 14, 3, 3, MovingAverageType.Simple);
+        }
+
+        protected override void OnTick()
+        {
+            // aktywny timeframe
+            trend_check();
+            trend_check_m5();
+            trend_check_m15();
+            trend_check_h1();
+            trend_check_h4();
+            // timeframe 
+            delta_ema26_ema60();
+            delta_ema26_ema60_m5();
+            delta_ema26_ema60_m15();
+            delta_ema26_ema60_h1();
+            delta_ema26_ema60_h4();
+            // sygnaly
+            stoch_check_m1();
+            //stoch_check_m5();
+            // czulosci
+            ChartObjects.DrawText("1", "czułość m1:" + _delta1_string, StaticPosition.TopRight, Colors.White);
+            ChartObjects.DrawText("2", "\n czułość m5 :" + _delta1_string_m5, StaticPosition.TopRight, Colors.White);
+            ChartObjects.DrawText("3", "\n\n czułość m15 :" + _delta1_string_m15, StaticPosition.TopRight, Colors.White);
+            ChartObjects.DrawText("4", "\n\n\n czułość h1 :" + _delta1_string_h1, StaticPosition.TopRight, Colors.White);
+            ChartObjects.DrawText("5", "\n\n\n\n czułość h4 :" + _delta1_string_h4, StaticPosition.TopRight, Colors.White);
+            // trendy wg interwalow
+            ChartObjects.DrawText("6", "\n\n\n\n\n trend m1:" + _m1_trend, StaticPosition.TopRight, Colors.White);
+            ChartObjects.DrawText("7", "\n\n\n\n\n\n trend m5:" + _m5_trend, StaticPosition.TopRight, Colors.White);
+            ChartObjects.DrawText("8", "\n\n\n\n\n\n\n trend m15:" + _m15_trend, StaticPosition.TopRight, Colors.White);
+            ChartObjects.DrawText("9", "\n\n\n\n\n\n\n\n trend h1:" + _h1_trend, StaticPosition.TopRight, Colors.White);
+            ChartObjects.DrawText("10", "\n\n\n\n\n\n\n\n\n trend h4:" + _h4_trend, StaticPosition.TopRight, Colors.White);
+        }
+        protected override void OnStop()
+        {
+            // Put your deinitialization logic here
+        }
+        // funkcje---------------------------------------------------------------------------------------------------------
+        // M1 
+        protected void delta_ema26_ema60()
+        {
+            int index = _timeframe_m1.OpenTime.Count - 2;
+            double _ema26result = _ema26.Result[index];
+            double _ema60result = _ema60.Result[index];
+            double _delta1 = _ema26result - _ema60result;
+            // zwracanie liczby bezwzglednej z delty ( w zaleznosci od ulozenia linii ema wartosc jest na + albo -
+            _abs_delta1 = Math.Abs(_delta1);
+            _abs_delta1 = Math.Round(_abs_delta1, 2);
+            _delta1_string = _abs_delta1.ToString(_delta_ref);
+            if (_abs_delta1 >= czulosc_m1 && short_trend_active_m1 == true)
+            {
+                // short trend m1
+                _m1_trend = "▼";
+                m1_short_trend = true;
+                m1_long_trend = false;
+                m1_consolidation = false;
+            }
+            // long trend m1
+            else if (_abs_delta1 >= czulosc_m1 && long_trend_active_m1 == true)
+            {
+                _m1_trend = "▲";
+                m1_short_trend = false;
+                m1_long_trend = true;
+                m1_consolidation = false;
+            }
+            // consolidation m1
+            else
+            {
+                _m1_trend = "~";
+                m1_short_trend = false;
+                m1_long_trend = true;
+                m1_consolidation = false;
+            }
+        }
+        // M5 
+        protected void delta_ema26_ema60_m5()
+        {
+            int index = _timeframe_m5.OpenTime.Count - 2;
+            double _ema26result = _ema26_m5.Result[index];
+            double _ema60result = _ema60_m5.Result[index];
+            double _delta1_m5 = _ema26result - _ema60result;
+            // zwracanie liczby bezwzglednej z delty ( w zaleznosci od ulozenia linii ema wartosc jest na + albo -
+            _abs_delta1_m5 = Math.Abs(_delta1_m5);
+            _abs_delta1_m5 = Math.Round(_abs_delta1_m5, 2);
+            _delta1_string_m5 = _abs_delta1_m5.ToString(_delta_ref_m5);
+            if (_abs_delta1_m5 >= czulosc_m5 && short_trend_active_m5 == true)
+            {
+                // short trend m5
+                _m5_trend = "▼";
+                m5_short_trend = true;
+                m5_long_trend = false;
+                m5_consolidation = false;
+            }
+            // long trend m5
+            else if (_abs_delta1_m5 >= czulosc_m5 && long_trend_active_m5 == true)
+            {
+                _m5_trend = "▲";
+                m5_short_trend = false;
+                m5_long_trend = true;
+                m5_consolidation = false;
+            }
+            // consolidation m5
+            else
+            {
+                _m5_trend = "~";
+                m5_short_trend = false;
+                m5_long_trend = true;
+                m5_consolidation = false;
+
+            }
+        }
+        // m15
+        protected void delta_ema26_ema60_m15()
+        {
+            int index = _timeframe_m15.OpenTime.Count - 2;
+            double _ema26result = _ema26_m15.Result[index];
+            double _ema60result = _ema60_m15.Result[index];
+            double _delta1_m15 = _ema26result - _ema60result;
+            // zwracanie liczby bezwzglednej z delty ( w zaleznosci od ulozenia linii ema wartosc jest na + albo -
+            _abs_delta1_m15 = Math.Abs(_delta1_m15);
+            _abs_delta1_m15 = Math.Round(_abs_delta1_m15, 2);
+            _delta1_string_m15 = _abs_delta1_m15.ToString(_delta_ref_m15);
+            if (_abs_delta1_m15 >= czulosc_m15 && short_trend_active_m15 == true)
+            {
+                // short trend m15
+                _m15_trend = "▼";
+                m15_short_trend = true;
+                m15_long_trend = false;
+                m15_consolidation = false;
+            }
+            // long trend m15
+            else if (_abs_delta1_m15 >= czulosc_m15 && long_trend_active_m15 == true)
+            {
+                _m15_trend = "▲";
+                m15_short_trend = false;
+                m15_long_trend = true;
+                m15_consolidation = false;
+            }
+            // consolidation m15
+            else
+            {
+                _m15_trend = "~";
+                m15_short_trend = false;
+                m15_long_trend = true;
+                m15_consolidation = false;
+            }
+        }
+        // h1
+        protected void delta_ema26_ema60_h1()
+        {
+            int index = _timeframe_h1.OpenTime.Count - 2;
+            double _ema26result = _ema26_h1.Result[index];
+            double _ema60result = _ema60_h1.Result[index];
+            double _delta1_h1 = _ema26result - _ema60result;
+            // zwracanie liczby bezwzglednej z delty ( w zaleznosci od ulozenia linii ema wartosc jest na + albo -
+            _abs_delta1_h1 = Math.Abs(_delta1_h1);
+            _abs_delta1_h1 = Math.Round(_abs_delta1_h1, 2);
+            _delta1_string_h1 = _abs_delta1_h1.ToString(_delta_ref_h1);
+            if (_abs_delta1_h1 >= czulosc_h1 && short_trend_active_h1 == true)
+            {
+                // short trend h1
+                _h1_trend = "▼";
+                h1_short_trend = true;
+                h1_long_trend = false;
+                h1_consolidation = false;
+            }
+            // long trend h1
+            else if (_abs_delta1_h1 >= czulosc_h1 && long_trend_active_h1 == true)
+            {
+                _h1_trend = "▲";
+                h1_short_trend = false;
+                h1_long_trend = true;
+                h1_consolidation = false;
+            }
+            // consolidation h1
+            else
+            {
+                _h1_trend = "~";
+                h1_short_trend = false;
+                h1_long_trend = true;
+                h1_consolidation = false;
+            }
+        }
+        // h1
+        protected void delta_ema26_ema60_h4()
+        {
+            int index = _timeframe_h4.OpenTime.Count - 2;
+            double _ema26result = _ema26_h4.Result[index];
+            double _ema60result = _ema60_h4.Result[index];
+            double _delta1_h4 = _ema26result - _ema60result;
+            // zwracanie liczby bezwzglednej z delty ( w zaleznosci od ulozenia linii ema wartosc jest na + albo -
+            _abs_delta1_h4 = Math.Abs(_delta1_h4);
+            _abs_delta1_h4 = Math.Round(_abs_delta1_h4, 2);
+            _delta1_string_h4 = _abs_delta1_h4.ToString(_delta_ref_h4);
+            if (_abs_delta1_h4 >= czulosc_h4 && short_trend_active_h4 == true)
+            {
+                // short trend h4
+                _h4_trend = "▼";
+                h4_short_trend = true;
+                h4_long_trend = false;
+                h4_consolidation = false;
+            }
+            // long trend h4
+            else if (_abs_delta1_h4 >= czulosc_h4 && long_trend_active_h4 == true)
+            {
+                _h4_trend = "▲";
+                h4_short_trend = false;
+                h4_long_trend = true;
+                h4_consolidation = false;
+            }
+            // consolidation h4
+            else
+            {
+                _h4_trend = "~";
+                h4_short_trend = false;
+                h4_long_trend = true;
+                h4_consolidation = false;
+            }
+        }
+        // STOCH CHECK 
+        protected void stoch_check_m1()
+        {
+            //warunek na short
+            if (_stoch14_m5.PercentK.Last(1) >= 80 && _stoch14_m5.PercentD.Last(1) >= 80)
+            {
+                marker_short_m5();
+            }
+            if (_stoch14_m1.PercentK.Last(1) >= 80 && _stoch14_m1.PercentD.Last(1) >= 80)
+            {
+                marker_short_m1();
+            }
+        }
+        // TREND CHECK------------------------------------------------------------------------
+        // trend m1
+        protected void trend_check()
+        {
+            int index = _timeframe_m1.OpenTime.Count - 2;
+            double _ema200result = _ema200.Result[index];
+            price_ask = Symbol.Ask;
+            price_bid = Symbol.Bid;
+            // short - cena ponizej ema200
+            if (price_bid < _ema200result && price_ask < _ema200result)
+            {
+                short_trend_active_m1 = true;
+                long_trend_active_m1 = false;
+                no_trend_active_m1 = false;
+            }
+            // long
+            else if (price_bid > _ema200result && price_ask > _ema200result)
+            {
+                short_trend_active_m1 = false;
+                long_trend_active_m1 = true;
+                no_trend_active_m1 = false;
+            }
+            // konsolidacja
+            else
+            {
+                short_trend_active_m1 = false;
+                long_trend_active_m1 = false;
+                no_trend_active_m1 = true;
+
+            }
+        }
+        // trend m5
+        protected void trend_check_m5()
+        {
+            int index = _timeframe_m5.OpenTime.Count - 2;
+            double _ema200result = _ema200_m5.Result[index];
+            price_ask = Symbol.Ask;
+            price_bid = Symbol.Bid;
+            // short - cena ponizej ema200
+            if (price_bid < _ema200result && price_ask < _ema200result)
+            {
+                short_trend_active_m5 = true;
+                long_trend_active_m5 = false;
+                no_trend_active_m5 = false;
+            }
+            // long
+            else if (price_bid > _ema200result && price_ask > _ema200result)
+            {
+                short_trend_active_m5 = false;
+                long_trend_active_m5 = true;
+                no_trend_active_m5 = false;
+            }
+            // konsolidacja
+            else
+            {
+                short_trend_active_m5 = false;
+                long_trend_active_m5 = false;
+                no_trend_active_m5 = true;
+
+            }
+        }
+        // trend m15
+        protected void trend_check_m15()
+        {
+            int index = _timeframe_m15.OpenTime.Count - 2;
+            double _ema200result = _ema200_m15.Result[index];
+            price_ask = Symbol.Ask;
+            price_bid = Symbol.Bid;
+            // short - cena ponizej ema200
+            if (price_bid < _ema200result && price_ask < _ema200result)
+            {
+                short_trend_active_m15 = true;
+                long_trend_active_m15 = false;
+                no_trend_active_m15 = false;
+            }
+            // long
+            else if (price_bid > _ema200result && price_ask > _ema200result)
+            {
+                short_trend_active_m15 = false;
+                long_trend_active_m15 = true;
+                no_trend_active_m15 = false;
+            }
+            // konsolidacja
+            else
+            {
+                short_trend_active_m15 = false;
+                long_trend_active_m15 = false;
+                no_trend_active_m15 = true;
+
+            }
+        }
+        // trend h1
+        protected void trend_check_h1()
+        {
+            int index = _timeframe_h1.OpenTime.Count - 2;
+            double _ema200result = _ema200_h1.Result[index];
+            price_ask = Symbol.Ask;
+            price_bid = Symbol.Bid;
+            // short - cena ponizej ema200
+            if (price_bid < _ema200result && price_ask < _ema200result)
+            {
+                short_trend_active_h1 = true;
+                long_trend_active_h1 = false;
+                no_trend_active_h1 = false;
+            }
+            // long
+            else if (price_bid > _ema200result && price_ask > _ema200result)
+            {
+                short_trend_active_h1 = false;
+                long_trend_active_h1 = true;
+                no_trend_active_h1 = false;
+            }
+            // konsolidacja
+            else
+            {
+                short_trend_active_h1 = false;
+                long_trend_active_h1 = false;
+                no_trend_active_h1 = true;
+
+            }
+        }
+        // trend h4
+        protected void trend_check_h4()
+        {
+            int index = _timeframe_h4.OpenTime.Count - 2;
+            double _ema200result = _ema200_h4.Result[index];
+            price_ask = Symbol.Ask;
+            price_bid = Symbol.Bid;
+            // short - cena ponizej ema200
+            if (price_bid < _ema200result && price_ask < _ema200result)
+            {
+                short_trend_active_h4 = true;
+                long_trend_active_h4 = false;
+                no_trend_active_h4 = false;
+            }
+            // long
+            else if (price_bid > _ema200result && price_ask > _ema200result)
+            {
+                short_trend_active_h4 = false;
+                long_trend_active_h4 = true;
+                no_trend_active_h4 = false;
+            }
+            // konsolidacja
+            else
+            {
+                short_trend_active_h4 = false;
+                long_trend_active_h4 = false;
+                no_trend_active_h4 = true;
+
+            }
+        }
+        // markery
+        protected void marker_short_m1()
+        {
+            var nazwa = "SHORT";
+            var index = MarketSeries.Low.Count - 1;
+            var low = MarketSeries.Low.Last(1);
+            var text = "▼";
+            var OX = index;
+            var OY = low;
+            var yAlign = VerticalAlignment.Bottom;
+            var xAlign = HorizontalAlignment.Right;
+            ChartObjects.DrawText(nazwa + index, text, OX, OY, yAlign, xAlign, Colors.White);
+        }
+        protected void marker_short_m5()
+        {
+            var nazwa = "SHORT";
+            var index = MarketSeries.Low.Count - 1;
+            var low = MarketSeries.Low.Last(1);
+            var text = "▼";
+            var OX = index;
+            var OY = low;
+            var yAlign = VerticalAlignment.Bottom;
+            var xAlign = HorizontalAlignment.Right;
+            ChartObjects.DrawText(nazwa + index, text, OX, OY, yAlign, xAlign, Colors.Yellow);
+        }
+    }
+
+
+}
+

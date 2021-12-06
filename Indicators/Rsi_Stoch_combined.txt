@@ -1,0 +1,50 @@
+using System;
+using cAlgo.API;
+using cAlgo.API.Internals;
+using cAlgo.API.Indicators;
+using cAlgo.Indicators;
+
+namespace cAlgo
+{
+    [Levels(30, 70)]
+
+    [Indicator(IsOverlay = false, TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
+    public class Rsi_Stoch_v0 : Indicator
+    {
+        // PARAMETRY RSI
+        // rsi
+        [Parameter("Period", Group = "RSI", DefaultValue = 14)]
+        public int rsiPeriod { get; set; }
+        [Output("RSI", LineColor = "Gray", PlotType = PlotType.Line, Thickness = 1)]
+        public IndicatorDataSeries RSI_Result { get; set; }
+        // stoch
+        [Parameter("Period", Group = "STOCH", DefaultValue = 14)]
+        public int Period_stoch { get; set; }
+        [Parameter("%K", Group = "STOCH", DefaultValue = 3)]
+        public int kPeriods_D { get; set; }
+        [Parameter("%D", Group = "STOCH", DefaultValue = 3)]
+        public int kSlowing_K { get; set; }
+        private StochasticOscillator _stoch;
+        [Output("%D", LineColor = "Red", PlotType = PlotType.DiscontinuousLine, Thickness = 1)]
+        public IndicatorDataSeries Percent_D { get; set; }
+        [Output("%K", LineColor = "Green", PlotType = PlotType.Line, Thickness = 1)]
+        public IndicatorDataSeries Percent_K { get; set; }
+        // var
+        private RelativeStrengthIndex _rsi;
+        protected override void Initialize()
+        {
+            DataSeries _ds = Bars.TypicalPrices;
+            _rsi = Indicators.RelativeStrengthIndex(_ds, rsiPeriod);
+            _stoch = Indicators.StochasticOscillator(14, 3, 3, MovingAverageType.Simple);
+        }
+
+        public override void Calculate(int index)
+        {
+            RSI_Result[index] = _rsi.Result[index];
+            ChartObjects.DrawLine("line" + index, index, _rsi.Result.Last(1), index - 1, _rsi.Result.Last(2), Colors.Yellow, 1, LineStyle.Solid);
+            Percent_K[index] = _stoch.PercentK.LastValue;
+            Percent_D[index] = _stoch.PercentD.LastValue;
+        }
+
+    }
+}

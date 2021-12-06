@@ -1,0 +1,88 @@
+using System;
+using cAlgo.API;
+using cAlgo.API.Internals;
+using cAlgo.API.Indicators;
+using cAlgo.Indicators;
+using System.Data;
+
+namespace cAlgo
+{
+
+// WERSJA v1 //
+
+    [Indicator(IsOverlay = true, TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
+    public class OK_EMA_cross : Indicator
+    {
+        // ema
+        private ExponentialMovingAverage _ema1;
+        private ExponentialMovingAverage _ema2;
+        private ExponentialMovingAverage _ema3;
+
+        // input param
+        [Parameter("Data Source")]
+        public DataSeries Source { get; set; }
+        [Parameter("Ema trend", DefaultValue = 200)]
+        public int ema3 { get; set; }
+        [Parameter("ema nr 2", DefaultValue = 13)]
+        public int ema2 { get; set; }
+        [Parameter("ema nr 1", DefaultValue = 5)]
+        public int ema1 { get; set; }
+        [Parameter("email", DefaultValue = "")]
+        public string e_mail { get; set; }
+        //flagi
+        bool flag_long = false;
+        bool flag_short = false;
+        protected override void Initialize()
+        {
+            _ema1 = Indicators.ExponentialMovingAverage(Source, ema1);
+            _ema2 = Indicators.ExponentialMovingAverage(_ema1.Result, ema2);
+            _ema3 = Indicators.ExponentialMovingAverage(_ema2.Result, ema3);
+
+        }
+
+        public override void Calculate(int index)
+        {
+            var email_text_1 = string.Format(Symbol.Name + "\n przecięcie ema pod LONG: ", Symbol.Name);
+            var email_text_2 = string.Format(Symbol.Name + "\n przecięcie ema pod SHORT:", Symbol.Name);
+            if (_ema1.Result.HasCrossedBelow(_ema2.Result, 0) && flag_short == false)
+            {
+                flag_long = false;
+                flag_short = true;
+                draw_marker_short(index);
+                Notifications.SendEmail(e_mail, e_mail, "przecięcie ema", email_text_2);
+            }
+            else if (_ema1.Result.HasCrossedAbove(_ema2.Result, 0) && flag_long == false)
+            {
+                flag_short = false;
+                flag_long = true;
+                draw_marker_long(index);
+                Notifications.SendEmail(e_mail, e_mail, "przecięcie ema", email_text_1);
+            }
+
+        }
+
+        public void draw_marker(int index)
+        {
+            var line_vertical = Chart.DrawVerticalLine("1" + index, Bars.OpenTimes.LastValue, Color.Gray);
+        }
+        public void draw_marker_long(int index)
+        {
+            var candle_low = Bars.LowPrices.LastValue;
+            var openTime = Bars.OpenTimes.LastValue;
+            var text = Chart.DrawText("1" + index, "▲", openTime, _ema2.Result[index] - 0.0001, Color.AliceBlue);
+            text.VerticalAlignment = VerticalAlignment.Top;
+            text.HorizontalAlignment = HorizontalAlignment.Center;
+        }
+        public void draw_marker_short(int index)
+        {
+            var candle_low = Bars.LowPrices.LastValue;
+            var openTime = Bars.OpenTimes.LastValue;
+            var text = Chart.DrawText("1" + index, "▼", openTime, _ema2.Result[index] + 0.0001, Color.White);
+            text.VerticalAlignment = VerticalAlignment.Top;
+            text.HorizontalAlignment = HorizontalAlignment.Center;
+        }
+
+    }
+
+
+}

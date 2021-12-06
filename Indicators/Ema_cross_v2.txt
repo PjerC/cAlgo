@@ -1,0 +1,145 @@
+using System;
+using cAlgo.API;
+using cAlgo.API.Internals;
+using cAlgo.API.Indicators;
+using cAlgo.Indicators;
+
+
+namespace cAlgo
+{
+    [Indicator(IsOverlay = true, TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
+    public class EMA_cross_v2 : Indicator
+    {
+
+        // TO DO 
+        // dodawani pozycji po przycisku, pobieranie danych z miejsca kursora i otwieranie pozycji na kliknieciu 
+        // ema
+        private ExponentialMovingAverage _ema1;
+        private ExponentialMovingAverage _ema2;
+        private ExponentialMovingAverage _ema3;
+
+        // input param
+        [Parameter("Data Source")]
+        public DataSeries Source { get; set; }
+        [Parameter("Ema trend", DefaultValue = 200)]
+        public int ema3 { get; set; }
+        [Parameter("ema nr 2", DefaultValue = 20)]
+        public int ema2 { get; set; }
+        [Parameter("ema nr 1", DefaultValue = 9)]
+        public int ema1 { get; set; }
+        [Output("RSI", LineColor = "Gray", PlotType = PlotType.Line, Thickness = 1)]
+        public IndicatorDataSeries RSI_Result { get; set; }
+        [Parameter("Period", Group = "RSI", DefaultValue = 14)]
+        public int rsiPeriod { get; set; }
+        private RelativeStrengthIndex _rsi;
+        //flagi
+        bool flag_long = false;
+        bool flag_short = false;
+        public int X;
+        public double D;
+        public DateTime X2;
+        protected override void Initialize()
+        {
+
+            _rsi = Indicators.RelativeStrengthIndex(Source, rsiPeriod);
+            _ema1 = Indicators.ExponentialMovingAverage(Source, ema1);
+            _ema2 = Indicators.ExponentialMovingAverage(_ema1.Result, ema2);
+            _ema3 = Indicators.ExponentialMovingAverage(_ema2.Result, ema3);
+
+            var btn_txt = new Button 
+            {
+                BackgroundColor = Color.Yellow,
+                ForegroundColor = Color.Black,
+                Text = "",
+                FontSize = 15,
+                Padding = "100 100",
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = 5,
+                IsEnabled = false,
+                IsVisible = true
+            };
+            var btn_ok = new Button 
+            {
+                BackgroundColor = Color.Yellow,
+                ForegroundColor = Color.Black,
+                Text = "",
+                FontSize = 15,
+                Padding = "10 10",
+                VerticalAlignment = VerticalAlignment.Bottom,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Margin = 5,
+                IsVisible = true
+            };
+
+            btn_ok.Click += args =>
+            {
+                btn_txt.IsVisible = false;
+                btn_ok.IsVisible = false;
+            };
+        }
+
+        public override void Calculate(int index)
+        {
+            var email_text_1 = string.Format(Symbol.Name + "\n przecięcie ema pod LONG: ", Symbol.Name);
+            var email_text_2 = string.Format(Symbol.Name + "\n przecięcie ema pod SHORT", Symbol.Name);
+            Color color_red = Color.FromArgb(70, Color.Red);
+            Color color_green = Color.FromArgb(70, Color.Green);
+            foreach (var position in Positions)
+            {
+                Chart.DrawVerticalLine("0", position.EntryTime, Color.Gray);
+                Chart.DrawRectangle("1", position.EntryTime, position.EntryPrice, position.EntryTime.AddHours(3), position.StopLoss.Value, color_red, 1);
+                Chart.DrawRectangle("2", position.EntryTime, position.EntryPrice, position.EntryTime.AddHours(3), position.TakeProfit.Value, color_green, 1);
+
+            }
+
+
+            if (_ema1.Result.HasCrossedBelow(_ema2.Result, 0) && flag_short == false)
+            {
+                flag_long = false;
+                flag_short = true;
+                draw_marker_short(index);
+                Notifications.SendEmail("piotrciealgo@gmail.com", "piotrciealgo@gmail.com", "przecięcie ema", email_text_2);
+
+            }
+            else if (_ema1.Result.HasCrossedAbove(_ema2.Result, 0) && flag_long == false)
+            {
+                flag_short = false;
+                flag_long = true;
+                draw_marker_long(index);
+                Notifications.SendEmail("piotrciealgo@gmail.com", "piotrciealgo@gmail.com", "przecięcie ema", email_text_1);
+
+            }
+
+        }
+
+        public void draw_marker(int index)
+        {
+            var line_vertical = Chart.DrawVerticalLine("1" + index, Bars.OpenTimes.LastValue, Color.Gray);
+        }
+
+        public void draw_marker_long(int index)
+        {
+            var candle_low = Bars.LowPrices.LastValue;
+            var openTime = Bars.OpenTimes.LastValue;
+            var text = Chart.DrawText("1" + index, "▲", openTime, _ema2.Result[index] - 0.0001, Color.AliceBlue);
+            text.VerticalAlignment = VerticalAlignment.Top;
+            text.HorizontalAlignment = HorizontalAlignment.Center;
+        }
+        public void draw_marker_short(int index)
+        {
+            var candle_low = Bars.LowPrices.LastValue;
+            var openTime = Bars.OpenTimes.LastValue;
+            var text = Chart.DrawText("1" + index, "▼", openTime, _ema2.Result[index] + 0.0001, Color.White);
+            text.VerticalAlignment = VerticalAlignment.Top;
+            text.HorizontalAlignment = HorizontalAlignment.Center;
+        }
+        public void Consent(object sender, EventArgs e)
+        {
+            Button btn_txt = (Button)(sender);
+            btn_txt.IsVisible = true;
+        }
+    }
+
+
+}

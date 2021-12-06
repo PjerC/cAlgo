@@ -1,0 +1,285 @@
+using System;
+using System.Linq;
+using cAlgo.API;
+using cAlgo.API.Indicators;
+using cAlgo.API.Internals;
+using cAlgo.Indicators;
+using System.Globalization;
+
+namespace cAlgo.Robots
+{
+    [Robot(TimeZone = TimeZones.UTC, AccessRights = AccessRights.None)]
+    public class EmaCrossRP : Robot
+    {
+        // PARAMETERS
+        // robot active time
+        [Parameter("Start Time", DefaultValue = "03:00:00")]
+        public string StartTime { get; set; }
+        [Parameter("End Time", DefaultValue = "17:00:00")]
+        public string EndTime { get; set; }
+        //hascrossed period
+        [Parameter("cross", DefaultValue = 0, MinValue = 0, Step = 1)]
+        public int Cross_Period { get; set; }
+        [Parameter("Quantity (Lots)", Group = "Volume", DefaultValue = 0.1, MinValue = 0.01, Step = 0.01)]
+        public double Quantity { get; set; }
+        //OUTPUTS 
+        public double AskPrice, BidPrice;
+        // market data series
+        public IndicatorDataSeries m1_dataSeries, m5_dataSeries, m15_dataSeries;
+        // timeframes
+        public Bars m1, m5, m15;
+        // ema200 period
+        public ExponentialMovingAverage m1_ema200, m5_ema200, m15_ema200;
+        // EmaCross period
+        public ExponentialMovingAverage m1_ema5, m1_ema13, m5_ema5, m5_ema13;
+        // ema200 result
+        public double m1_ema200_result, m5_ema200_result, m15_ema200_result;
+        // EmaCross result
+        public double m1_ema5_result, m1_ema13_result, m5_ema5_result, m5_ema13_result;
+        // Rsi period
+        public RelativeStrengthIndex m1_rsi, m5_rsi;
+        // Rsi result
+        public double m1_rsi_result, m5_rsi_result;
+        // Ema DeltaAbs
+        public double delta_1_abs, delta_2_abs;
+        //counters
+        private int counter_1, counter_2, counter_3, counter_4;
+        // strings
+        private const string label = "Pos";
+        // flags
+        private bool shortPosActive, longPosActive;
+        private bool m1_short_trend = false, m1_long_trend = false;
+        //auxiliary
+        private TimeSpan _startTime, _endTime;
+
+        #region ACTIVE_TIME
+        private DateTime CurrentTime
+        {
+            get { return Server.TimeInUtc.Add(-Application.UserTimeOffset); }
+        }
+
+        private bool IsTimeCorrect
+        {
+            get { return (_startTime > _endTime && (CurrentTime.TimeOfDay >= _startTime || CurrentTime.TimeOfDay <= _endTime)) || (_startTime < _endTime && (CurrentTime.TimeOfDay >= _startTime && CurrentTime.TimeOfDay <= _endTime)); }
+        }
+        #endregion ACTIVE_TIME
+
+        protected override void OnStart()
+        {
+            // time management
+            if (!TimeSpan.TryParse(StartTime, CultureInfo.InvariantCulture, out _startTime))
+            {
+                Print("Invalid start time input");
+
+                Stop();
+            }
+
+            if (!TimeSpan.TryParse(EndTime, CultureInfo.InvariantCulture, out _endTime))
+            {
+                Print("Invalid end time input");
+
+                Stop();
+            }
+            // 
+            // reset counters
+            counter_1 = 0;
+            counter_2 = 0;
+            counter_3 = 0;
+            counter_4 = 0;
+            shortPosActive = false;
+            longPosActive = false;
+            // get market data for timeframes
+            m1 = MarketData.GetBars(TimeFrame.Minute);
+            m5 = MarketData.GetBars(TimeFrame.Minute5);
+            m15 = MarketData.GetBars(TimeFrame.Minute15);
+            // get ema200 values from specific timeframes
+            m1_ema200 = Indicators.ExponentialMovingAverage(m1.ClosePrices, 200);
+            m5_ema200 = Indicators.ExponentialMovingAverage(m5.ClosePrices, 200);
+            m15_ema200 = Indicators.ExponentialMovingAverage(m15.ClosePrices, 200);
+            // get EmaCross values from specific timeframes
+            m1_ema5 = Indicators.ExponentialMovingAverage(m1.ClosePrices, 5);
+            m1_ema13 = Indicators.ExponentialMovingAverage(m1.ClosePrices, 13);
+            m5_ema5 = Indicators.ExponentialMovingAverage(m5.ClosePrices, 5);
+            m5_ema13 = Indicators.ExponentialMovingAverage(m5.ClosePrices, 13);
+            // get rsi values from specific timeframes
+            m1_rsi = Indicators.RelativeStrengthIndex(m1.ClosePrices, 14);
+            m5_rsi = Indicators.RelativeStrengthIndex(m5.ClosePrices, 14);
+
+        }
+
+        protected override void OnTick()
+        {
+            //check time
+            if (!IsTimeCorrect)
+                return;
+            //tsl
+            SetTrailingStop();
+            AskPrice = Symbol.Ask;
+            BidPrice = Symbol.Bid;
+            // calculate ema200 result for specific timeframes
+            m1_ema200_result = m1_ema200.Result.LastValue;
+            m5_ema200_result = m5_ema200.Result.LastValue;
+            m15_ema200_result = m15_ema200.Result.LastValue;
+            // calculate EmaCrossvalues for specific timeframes
+            m1_ema5_result = m1_ema5.Result.LastValue;
+            m1_ema13_result = m1_ema13.Result.LastValue;
+            m5_ema5_result = m5_ema5.Result.LastValue;
+            m5_ema13_result = m5_ema13.Result.LastValue;
+            // calculate rsi for specific timeframes
+            m1_rsi_result = m1_rsi.Result.LastValue;
+            m5_rsi_result = m5_rsi.Result.LastValue;
+            // trend check
+            TrendCheck();
+            //position check
+            PositionActive_Check();
+            // calc
+            Calculate_emaDelta();
+
+            #region EMA_STRATEGY
+            //emacross 
+            // LONG - if ema5 crossed ema13 and short position is not opened
+            if (m1_long_trend == true && m1_ema5.Result.HasCrossedAbove(m1_ema13.Result, Cross_Period) && longPosActive == false)
+            {
+                ExecuteMarketOrder(TradeType.Buy, SymbolName, VolumeInUnits, label);
+                Chart.DrawText("TxtLong" + counter_1, "▲", Bars.OpenTimes.LastValue, Bars.LowPrices.Last(2), Color.Green);
+                Chart.DrawVerticalLine("vLine1" + counter_1, Bars.OpenTimes.LastValue, Color.Green);
+                counter_1 += 1;
+                longPosActive = true;
+            }
+            // SHORT - if ema5 crossed ema13 and long position is not opened 
+            if (m1_short_trend == true && m1_ema5.Result.HasCrossedBelow(m1_ema13.Result, 0) && shortPosActive == false)
+            {
+                //ClosePositions();
+                Chart.DrawText("TxtShort" + counter_2, "▼", Bars.OpenTimes.LastValue, Bars.HighPrices.Last(2), Color.Red);
+                Chart.DrawVerticalLine("vLine2" + counter_2, Bars.OpenTimes.LastValue, Color.Red);
+                counter_2 += 1;
+                //shortPosActive = true;
+            }
+            #endregion EMA_STRATEGY
+
+            #region DISPLAY_DATA
+            // display
+            Chart.DrawStaticText("long", "" + longPosActive, VerticalAlignment.Center, HorizontalAlignment.Center, Color.White);
+            // Chart.DrawText("1" + counter_3, "" + delta_1_abs, Bars.OpenTimes.LastValue, Bars.HighPrices.LastValue, Color.White);
+            // Chart.DrawText("2" + counter_4, "\n" + delta_2_abs, Bars.OpenTimes.LastValue, Bars.HighPrices.LastValue, Color.White);
+            #endregion
+        }
+
+        protected override void OnStop()
+        {
+        }
+        #region FUNCTIONS
+        // FUNCTIONS
+        // trend check by ema200
+        protected void TrendCheck()
+        {
+            if (AskPrice < m1_ema200_result || BidPrice < m1_ema200_result)
+            {
+                m1_short_trend = true;
+                m1_long_trend = false;
+                //Chart.DrawStaticText("2", "\n short:" + short_trend, VerticalAlignment.Center, HorizontalAlignment.Center, Color.Red);
+                ChangeBar_Short();
+            }
+            else if (AskPrice > m1_ema200_result || BidPrice > m1_ema200_result)
+            {
+                m1_short_trend = false;
+                m1_long_trend = true;
+
+                // Chart.DrawStaticText("2", "\n long:" + long_trend, VerticalAlignment.Center, HorizontalAlignment.Center, Color.Green);
+                ChangeBar_Long();
+            }
+        }
+
+        // check if position is opened
+        private void PositionActive_Check()
+        {
+            var Long = Positions.Count;
+            if (Long == 0)
+            {
+                longPosActive = false;
+            }
+        }
+        // trailig stop loss
+        private void SetTrailingStop()
+        {
+            var buyPositions = Positions.FindAll("Pos");
+
+            foreach (Position position in buyPositions)
+            {
+                double distance = Symbol.Bid - position.EntryPrice;
+
+                if (distance < 1 * Symbol.PipSize)
+                    continue;
+
+                double newStopLossPrice = Symbol.Bid - 100 * Symbol.PipSize;
+                if (position.StopLoss == null || newStopLossPrice > position.StopLoss)
+                {
+                    ModifyPosition(position, newStopLossPrice, position.TakeProfit);
+                }
+            }
+        }
+        //close activeposition
+        protected void ClosePositions()
+        {
+            foreach (var position in Positions)
+            {
+                ClosePosition(position);
+            }
+        }
+        // ema_deltas calculations
+        protected void Calculate_emaDelta()
+        {
+            // delta between m1_ema5 & m1_ema13
+            var delta_1 = m1_ema5_result - m1_ema13_result;
+            delta_1 = Math.Round(delta_1, 3);
+            delta_1_abs = Math.Abs(delta_1);
+            counter_3 += 1;
+        }
+        protected void calc_PriceEmaDelta()
+        {
+            //calculate distance between actual price and m1_ema200
+            var delta_2 = AskPrice - m1_ema200_result;
+            delta_2 = Math.Round(delta_2, 3);
+            delta_2_abs = Math.Abs(delta_2);
+            counter_4 += 1;
+        }
+        // bars trend coloring
+        protected void ChangeBar_Short()
+        {
+            var index = Bars.OpenTimes.Last(1);
+            var low = Bars.LowPrices.Last(1);
+            var close = Bars.ClosePrices.Last(1);
+            var high = Bars.HighPrices.Last(1);
+            var open = Bars.OpenPrices.Last(1);
+            Chart.DrawTrendLine("candle" + index, index, open, index, close, Color.Red, 6, LineStyle.Solid);
+            Chart.DrawTrendLine("wick" + index, index, high, index, low, Color.Red, 1, LineStyle.Solid);
+        }
+        protected void ChangeBar_Long()
+        {
+            var index = Bars.OpenTimes.Last(1);
+            var low = Bars.LowPrices.Last(1);
+            var close = Bars.ClosePrices.Last(1);
+            var high = Bars.HighPrices.Last(1);
+            var open = Bars.OpenPrices.Last(1);
+            Chart.DrawTrendLine("candle" + index, index, open, index, close, Color.Green, 6, LineStyle.Solid);
+            Chart.DrawTrendLine("wick" + index, index, high, index, low, Color.Green, 1, LineStyle.Solid);
+        }
+        protected void ChangeBar_Consolidation()
+        {
+            var index = Bars.OpenTimes.Last(2);
+            var low = Bars.LowPrices.Last(2);
+            var close = Bars.ClosePrices.Last(2);
+            var high = Bars.HighPrices.Last(2);
+            var open = Bars.OpenPrices.Last(2);
+            Chart.DrawTrendLine("candle" + index, index, open, index, close, Color.Gray, 6, LineStyle.Solid);
+            Chart.DrawTrendLine("wick" + index, index, high, index, low, Color.Gray, 1, LineStyle.Solid);
+        }
+
+        private double VolumeInUnits
+        {
+            get { return Symbol.QuantityToVolumeInUnits(Quantity); }
+        }
+        #endregion FUNCTIONS
+    }
+
+}
